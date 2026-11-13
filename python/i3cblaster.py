@@ -173,6 +173,33 @@ class i3cblaster:
         if resp[0] != self.OKTEXT:
             raise Exception('I3C Blaster exception: ' + resp[0])
 
+    # Software reset of the I3CBlaster device (RP2040 reboot).
+    # The device acknowledges with OK(0) and reboots; its USB serial port disconnects
+    # and re-enumerates, so the serial port is closed here and the next command reconnects.
+    # bootloader=True reboots into the RP2040 USB (BOOTSEL) bootloader instead (for firmware updates);
+    # the device then shows up as a USB mass storage drive, not as I3CBlaster.
+    # wait_s: for a plain reset, wait up to this many seconds for the device to come back
+    # (0 = do not wait). Returns True if the device is reachable again (or no wait was requested).
+    def reset(self, bootloader=False, wait_s=5):
+        resp = self._parse_response(self._exec('reset 1' if bootloader else 'reset'))
+        if resp[0] != self.OKTEXT:
+            raise Exception('I3C Blaster exception: ' + resp[0])
+        if self._ser is not None:
+            try:
+                self._ser.close()
+            except Exception:
+                pass
+            self._ser = None
+        if bootloader or not wait_s:
+            return True
+        time.sleep(0.5) # give the device time to drop off USB before looking for it again
+        starttime = time.time()
+        while (time.time() - starttime) < wait_s:
+            if self._findcomport(self._serialnumber) is not None and self._connect():
+                return True
+            time.sleep(0.2)
+        return False
+
     # Set the I3C clock frequency in units of kHz.
     # provide e.g. 12500 for 12.5 MHz
     def i3c_clk(self, clockrate_khz):

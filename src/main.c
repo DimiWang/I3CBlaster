@@ -19,6 +19,8 @@
 #include "XiaoNeoPixel.h"
 
 #include "hardware/i2c.h"
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 
 bool is_xiao = true;
 
@@ -818,6 +820,37 @@ UCLI_COMMAND_DEF(i3c_recover, "reinitialize i3c driver")
 }
 
 
+UCLI_COMMAND_DEF(reset, "Software reset of the I3CBlaster device. Replies OK(0), then reboots (the USB serial port re-enumerates). 'reset 1' reboots into the USB (BOOTSEL) bootloader instead",
+    UCLI_OPTIONAL_INT_ARG_DEF(bootloader, "Optional: 0 or omitted = plain software reset (default), 1 = reboot into the RP2040 USB mass storage bootloader")
+)
+{
+	bool to_bootloader = (args->bootloader != UCLI_INT_ARG_DEFAULT) && (args->bootloader != 0);
+
+	if ((args->bootloader != UCLI_INT_ARG_DEFAULT) && (args->bootloader != 0) && (args->bootloader != 1))
+	{
+		ucli_error("bootloader has to be 0 or 1");
+		return;
+	}
+
+	// acknowledge first, then give the USB CDC stack time to send the reply to the host
+	printf("%s\r\n", i3c_hl_get_errorstring(i3c_hl_status_ok));
+	stdio_flush();
+	sleep_ms(100);
+
+	if (to_bootloader)
+	{
+		reset_usb_boot(0, 0); // does not return
+	}
+	else
+	{
+		watchdog_reboot(0, 0, 10); // reboot via watchdog after 10ms, does not return
+	}
+	while (1)
+	{
+		tight_loop_contents();
+	}
+}
+
 bool usb_newly_connected(void)
 {
 	static bool was_connected = false;
@@ -873,6 +906,7 @@ int main()
 	ucli_cmd_register(i2c_writeread);
 
 	ucli_cmd_register(i3c_recover);
+	ucli_cmd_register(reset);
 	
 	
 	//ucli_cmd_register(i3c_gpiobase); // With xiao module autodetection this function is not required anymore.

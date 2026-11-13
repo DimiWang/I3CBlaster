@@ -205,6 +205,7 @@ Example Putty settings:
 | gpio_read  | get gpio state. If no parameter is given a 32 Bit number containint all GPIO states is returned|
 |info|Show some information about this version|
 |i3c_targetreset| Execute a targetreset sequence on I3C Bus|
+|reset| Software reset of the I3CBlaster device itself (RP2040 reboot). Replies OK(0), then reboots; the USB serial port disconnects and re-enumerates. Use reset 1 to reboot into the RP2040 USB (BOOTSEL) bootloader for a firmware update. Not to be confused with i3c_targetreset, which resets targets on the I3C bus|
 |i3c_drivestrength|Set the drivestrength of the controllers SDA and SCL pads. Valid values are 2, 4, 8, 12, representing 2mA, 4mA, 8mA or 12mA.
 |i3c_clk|Set I3C clock frequency|
 |i3c_scan|Scan for available I3C devices on the bus|
@@ -277,6 +278,8 @@ This module is done with the intention to be EASY useable. This e.g. involves al
 Disclaimer: I did only test this under Windows, but it should work flawless under Linux too. Have to test this during next days once on my linux machine, but since a few weeks I am in a Windows mode (*Yes, shame on me!*).
 
 The python module but also an example code is located in the python subdirectory. It should be pretty self explaining and exposes the same commands as the interactive mode.
+
+To software-reset the I3CBlaster from Python call `i3c.reset()`. It closes the serial port and waits (up to `wait_s` seconds, default 5) for the device to re-enumerate; the next command reconnects automatically. `i3c.reset(bootloader=True)` reboots into the RP2040 USB bootloader instead.
 
 The file i3cblaster_demo_runme.py is a python code using the i3cblaster module.
 i3cblaster.py contains the code of the i3cblaster module itself.
