@@ -200,32 +200,60 @@ Example Putty settings:
 
 ## Commands
 
-| Command name | Description                                                                                                                                    |
-|--------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| help         | List all commands or give details about a specific command.<br>You can just enter help or e.g. help i3c_clk to get information about a command |
-| gpio_write | Sets a gpio pin state and direction|
-| gpio_read  | get gpio state. If no parameter is given a 32 Bit number containint all GPIO states is returned|
-|info|Show some information about this version|
-|i3c_targetreset| Execute a targetreset sequence on I3C Bus|
-|reset| Software reset of the I3CBlaster device itself (RP2040 reboot). Replies OK(0), then reboots; the USB serial port disconnects and re-enumerates. reset 1 is an alias for the bootloader command. Not to be confused with i3c_targetreset, which resets targets on the I3C bus|
-|bootloader| Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update without pressing the BOOTSEL button. Replies OK(0), then the device shows up as the RPI-RP2 USB drive; copy a .uf2 file onto it|
-|i3c_drivestrength|Set the drivestrength of the controllers SDA and SCL pads. Valid values are 2, 4, 8, 12, representing 2mA, 4mA, 8mA or 12mA.
-|i3c_clk|Set I3C clock frequency|
-|i3c_scan|Scan for available I3C devices on the bus|
-|i3c_entdaa|Execute i3c entdaa procedure. The I3C address to assign can be given as a parameter|
-|i3c_rstdaa|Execute a I3C RSTDAA CCC broadcast transfer. This will un-assign all targets dynamic addresses|
-|i3c_sdr_write| Execute a private write transfer to a target|
-|i3c_sdr_read | Execute a private read from a target|
-|i3c_sdr_writeread | Execute a private combined write read transfer from a target. Useful e.g. to read register values|
-|i3c_sdr_ccc_bc_write| Execute a ccc broadcast write transfer|
-|i3c_sdr_ccc_direct_write|Execute a ccc direct write transfer|
-|i3c_sdr_ccc_direct_read|Execute a ccc direct read transfer|
-|i3c_poll|Allows a readout of IBI or HJ (hotjoin) information from the bus. Call this function in case an IBI was signalled back when calling a transfer function or in regular intervals to ensure you get to see IBIs|
-|i3c_ddr_config|Configure I3C behavior/ I3C target capability. Look into ENDXFER CCC for complete explanation|
-|i3c_ddr_write|Execute a private DDR mode write transfer to a target. The function returns error code and how many words have actually been written|
-|i3c_ddr_read|Execute a HDR-DDR mode read transfer from a target. The function returns error code and the read data words|
-|i3c_ddr_writeread|Execute a HDR-DDR mode write transfer followed by a read. The function returns error code and how many words have actually been written and read data words|
+**The full command reference is in [docs/COMMANDS.md](docs/COMMANDS.md).** It covers every command's parameters (type, range, default), every possible response (`OK(0)`, error codes, data formats, parser errors) and what each response means, with examples.
 
+| Command | Syntax | Purpose |
+|---------|--------|---------|
+| [help](docs/COMMANDS.md#help) | `help [command]` | List commands or show details of one |
+| [info](docs/COMMANDS.md#info) | `info` | Version and debug information |
+| [reset](docs/COMMANDS.md#reset) | `reset [bootloader]` | Software reset of the I3CBlaster |
+| [bootloader](docs/COMMANDS.md#bootloader) | `bootloader` | Reboot into the RP2040 USB bootloader |
+| [gpio_write](docs/COMMANDS.md#gpio_write) | `gpio_write port state` | Drive a GPIO high/low or make it an input |
+| [gpio_read](docs/COMMANDS.md#gpio_read) | `gpio_read [gpionum]` | Read all GPIOs or one GPIO |
+| [i3c_clk](docs/COMMANDS.md#i3c_clk) | `i3c_clk freq_khz` | Set the I3C SDR clock |
+| [i3c_drivestrength](docs/COMMANDS.md#i3c_drivestrength) | `i3c_drivestrength strength` | Set SDA/SCL pad drive strength |
+| [i3c_recover](docs/COMMANDS.md#i3c_recover) | `i3c_recover` | Re-initialise the I3C driver |
+| [i3c_targetreset](docs/COMMANDS.md#i3c_targetreset) | `i3c_targetreset` | Send the I3C Target Reset pattern |
+| [i3c_scan](docs/COMMANDS.md#i3c_scan) | `i3c_scan` | List acknowledging I3C addresses |
+| [i3c_rstdaa](docs/COMMANDS.md#i3c_rstdaa) | `i3c_rstdaa` | Broadcast RSTDAA (reset all dynamic addresses) |
+| [i3c_entdaa](docs/COMMANDS.md#i3c_entdaa) | `i3c_entdaa addr` | Assign one dynamic address with ENTDAA |
+| [i3c_sdr_write](docs/COMMANDS.md#i3c_sdr_write) | `i3c_sdr_write addr [payload]` | Private SDR write |
+| [i3c_sdr_read](docs/COMMANDS.md#i3c_sdr_read) | `i3c_sdr_read addr len` | Private SDR read |
+| [i3c_sdr_writeread](docs/COMMANDS.md#i3c_sdr_writeread) | `i3c_sdr_writeread addr payload len` | Private write + repeated START + read |
+| [i3c_sdr_ccc_bc_write](docs/COMMANDS.md#i3c_sdr_ccc_bc_write) | `i3c_sdr_ccc_bc_write payload` | Broadcast CCC write |
+| [i3c_sdr_ccc_direct_write](docs/COMMANDS.md#i3c_sdr_ccc_direct_write) | `i3c_sdr_ccc_direct_write addr bc_payload dir_payload` | Direct CCC write |
+| [i3c_sdr_ccc_direct_read](docs/COMMANDS.md#i3c_sdr_ccc_direct_read) | `i3c_sdr_ccc_direct_read addr payload len` | Direct CCC read |
+| [i3c_poll](docs/COMMANDS.md#i3c_poll) | `i3c_poll` | Read a pending IBI / Hot-Join |
+| [i3c_ddr_config](docs/COMMANDS.md#i3c_ddr_config) | `i3c_ddr_config crc_word_indicator enable_early_write_term write_ack_enable` | HDR-DDR target capability settings |
+| [i3c_ddr_write](docs/COMMANDS.md#i3c_ddr_write) | `i3c_ddr_write addr cmd payload` | HDR-DDR write |
+| [i3c_ddr_read](docs/COMMANDS.md#i3c_ddr_read) | `i3c_ddr_read addr cmd wordcount` | HDR-DDR read |
+| [i3c_ddr_writeread](docs/COMMANDS.md#i3c_ddr_writeread) | `i3c_ddr_writeread addr wrcmd rdcmd payload wordcount` | HDR-DDR write + HDR restart + read |
+| [i2c_clk](docs/COMMANDS.md#i2c_clk) | `i2c_clk freq_khz` | Set the I2C clock |
+| [i2c_timeout](docs/COMMANDS.md#i2c_timeout) | `i2c_timeout timeout_ms` | Set the I2C transfer timeout |
+| [i2c_scan](docs/COMMANDS.md#i2c_scan) | `i2c_scan` | List acknowledging I2C addresses |
+| [i2c_write](docs/COMMANDS.md#i2c_write) | `i2c_write addr [payload]` | I2C write |
+| [i2c_read](docs/COMMANDS.md#i2c_read) | `i2c_read addr len` | I2C read |
+| [i2c_writeread](docs/COMMANDS.md#i2c_writeread) | `i2c_writeread addr payload len` | I2C write + repeated START + read |
+
+`reset` reboots the I3CBlaster itself; `i3c_targetreset` resets the targets on the I3C bus.
+
+Response codes at a glance (details in [docs/COMMANDS.md](docs/COMMANDS.md#status--error-code-table)):
+
+| Code | Response | Meaning |
+|-----:|----------|---------|
+| 0 | `OK(0)` | Success |
+| 1 | `ERR_IBI_ARBITRATION(1)` | IBI / Hot-Join pending or won arbitration; transfer not executed. Call `i3c_poll` |
+| 2 | `ERR_NAKED_DURING_ARBHDR(2)` | Broadcast address 0x7E not acknowledged (no I3C target / bus problem) |
+| 3 | `ERR_NAKED(3)` | Target address not acknowledged |
+| 4 | `ERR_INVALID_PARAMETER(4)` | Parameter out of range |
+| 5 | `WARN_NO_IBI(5)` | `i3c_poll`: nothing pending |
+| 6 | `ERR_NAKED_DDR(6)` | HDR-DDR read command not acknowledged |
+| 7 | `WARN_EARLY_TERMINATED(7)` | HDR-DDR write terminated early by target (currently never returned) |
+| 8 | `ERR_DDR_INVALID_PREAMBLE(8)` | HDR-DDR read: invalid preamble |
+| 9 | `ERR_DDR_READ_PARITY_WRONG(9)` | HDR-DDR read: parity error |
+| 10 | `ERR_DDR_READ_CRC_WRONG(10)` | HDR-DDR read: CRC error (currently never returned) |
+| 11 | `ERR_I2C_FAILED(11)` | I2C NAK or timeout |
+| – | `ERROR: ...` (red) | Command line or payload parser error, e.g. `ERROR: Command not found (x)`, `ERROR: Too few arguments` |
 
 Each command parameters can be seen when typing:
 <br>help [functionname]
