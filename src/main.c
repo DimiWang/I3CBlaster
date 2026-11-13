@@ -19,6 +19,8 @@
 #include "XiaoNeoPixel.h"
 
 #include "hardware/i2c.h"
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 
 bool is_xiao = true;
 
@@ -818,6 +820,92 @@ UCLI_COMMAND_DEF(i3c_recover, "reinitialize i3c driver")
 }
 
 
+// Send the OK(0) acknowledge and give the USB CDC stack time to deliver it to the host
+// before the device drops off the USB bus.
+static void reply_ok_before_reboot(void)
+{
+	printf("%s\r\n", i3c_hl_get_errorstring(i3c_hl_status_ok));
+	stdio_flush();
+	sleep_ms(100);
+}
+
+static void __attribute__((noreturn)) reboot_to_usb_bootloader(void)
+{
+	reply_ok_before_reboot();
+	reset_usb_boot(0, 0); // enter the RP2040 USB mass storage (BOOTSEL) bootloader, does not return
+	while (1)
+	{
+		tight_loop_contents();
+	}
+}
+
+UCLI_COMMAND_DEF(reset, "Software reset of the I3CBlaster device. Replies OK(0), then reboots (the USB serial port re-enumerates). 'reset 1' is an alias for the bootloader command",
+    UCLI_OPTIONAL_INT_ARG_DEF(bootloader, "Optional: 0 or omitted = plain software reset (default), 1 = reboot into the RP2040 USB mass storage bootloader (same as the bootloader command)")
+)
+{
+	if ((args->bootloader != UCLI_INT_ARG_DEFAULT) && (args->bootloader != 0) && (args->bootloader != 1))
+	{
+		ucli_error("bootloader has to be 0 or 1");
+		return;
+	}
+
+	if (args->bootloader == 1)
+	{
+		reboot_to_usb_bootloader(); // does not return
+	}
+
+	reply_ok_before_reboot();
+	watchdog_reboot(0, 0, 10); // reboot via watchdog after 10ms, does not return
+	while (1)
+	{
+		tight_loop_contents();
+	}
+}
+
+UCLI_COMMAND_DEF(bootloader, "Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update. Replies OK(0), then the device re-enumerates as the RPI-RP2 USB drive; copy a .uf2 file onto it")
+{
+	reboot_to_usb_bootloader(); // does not return
+}
+
+// Activity LED: blinks briefly whenever a character is received over USB CDC and when the
+// command's response has been sent. Only driven from the main loop between commands, so it
+// never touches I3C/I2C timing or the PIO.
+#ifdef PICO_DEFAULT_LED_PIN
+#define ACTIVITY_LED_PIN    PICO_DEFAULT_LED_PIN // GPIO25: green LED on Raspberry Pi Pico, blue user LED (active low) on Seeed Xiao RP2040
+#define ACTIVITY_LED_ON_US  (40ul * 1000ul)       // LED on time after the last activity
+static bool activity_led_active_low = false;
+static bool activity_led_on = false;
+static uint64_t activity_led_off_time;
+
+static void activity_led_init(void)
+{
+	activity_led_active_low = is_xiao; // Xiao RP2040 user LED is wired to 3V3 (active low)
+	gpio_init(ACTIVITY_LED_PIN);
+	gpio_put(ACTIVITY_LED_PIN, activity_led_active_low); // off
+	gpio_set_dir(ACTIVITY_LED_PIN, GPIO_OUT);
+}
+
+static void activity_led_trigger(void)
+{
+	gpio_put(ACTIVITY_LED_PIN, !activity_led_active_low); // on
+	activity_led_on = true;
+	activity_led_off_time = time_us_64() + ACTIVITY_LED_ON_US;
+}
+
+static void activity_led_update(void)
+{
+	if (activity_led_on && (time_us_64() >= activity_led_off_time))
+	{
+		gpio_put(ACTIVITY_LED_PIN, activity_led_active_low); // off
+		activity_led_on = false;
+	}
+}
+#else
+static inline void activity_led_init(void) {}
+static inline void activity_led_trigger(void) {}
+static inline void activity_led_update(void) {}
+#endif
+
 bool usb_newly_connected(void)
 {
 	static bool was_connected = false;
@@ -843,6 +931,8 @@ int main()
 	{
 		gpio_init(gpio);
 	}
+
+	activity_led_init();
 
     ucli_init();
     ucli_cmd_register(gpio_write);
@@ -873,6 +963,8 @@ int main()
 	ucli_cmd_register(i2c_writeread);
 
 	ucli_cmd_register(i3c_recover);
+	ucli_cmd_register(reset);
+	ucli_cmd_register(bootloader);
 	
 	
 	//ucli_cmd_register(i3c_gpiobase); // With xiao module autodetection this function is not required anymore.
@@ -931,9 +1023,12 @@ int main()
 		int ch = getchar_timeout_us(0);
 		if (ch >= 0)
 		{
+			activity_led_trigger(); // character received
         	ucli_process((char)ch);
+			activity_led_trigger(); // restart the on time after the command (and its response) completed
 			comm_active = 3; // keep Neolight >=300ms in ON state every time a character was received
 		}
+		activity_led_update();
 
 		if (is_xiao)
 		{

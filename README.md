@@ -107,6 +107,8 @@ The Xiao RP2040 module has a nice NeoPixel LED. I enabled it to show in the soft
 
 ![](https://raw.githubusercontent.com/xyphro/I3CBlaster/master/pictures/XiaoLedColor.png)
 
+Activity LED: in addition, the on-board LED on GPIO25 blinks briefly (about 40 ms) whenever data is received over the USB serial port and after each command and its response completed (so also after I3C/I2C transfers). On the Raspberry Pi Pico this is the green on-board LED, on the Seeed Xiao RP2040 it is the blue user LED. The LED is only switched between commands and does not affect I3C/I2C timing. Do not use GPIO25 with gpio_write, it is reserved for this LED.
+
 ## Further planned changes
 
 Upcoming SW changes will include functional extensions, but first an instantiation method to enable running the i3c_hl module 2 I3C controllers on RP2040 on both PIO instances, but also a cleanup and Doxygen style API documentation.
@@ -205,6 +207,8 @@ Example Putty settings:
 | gpio_read  | get gpio state. If no parameter is given a 32 Bit number containint all GPIO states is returned|
 |info|Show some information about this version|
 |i3c_targetreset| Execute a targetreset sequence on I3C Bus|
+|reset| Software reset of the I3CBlaster device itself (RP2040 reboot). Replies OK(0), then reboots; the USB serial port disconnects and re-enumerates. reset 1 is an alias for the bootloader command. Not to be confused with i3c_targetreset, which resets targets on the I3C bus|
+|bootloader| Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update without pressing the BOOTSEL button. Replies OK(0), then the device shows up as the RPI-RP2 USB drive; copy a .uf2 file onto it|
 |i3c_drivestrength|Set the drivestrength of the controllers SDA and SCL pads. Valid values are 2, 4, 8, 12, representing 2mA, 4mA, 8mA or 12mA.
 |i3c_clk|Set I3C clock frequency|
 |i3c_scan|Scan for available I3C devices on the bus|
@@ -277,6 +281,8 @@ This module is done with the intention to be EASY useable. This e.g. involves al
 Disclaimer: I did only test this under Windows, but it should work flawless under Linux too. Have to test this during next days once on my linux machine, but since a few weeks I am in a Windows mode (*Yes, shame on me!*).
 
 The python module but also an example code is located in the python subdirectory. It should be pretty self explaining and exposes the same commands as the interactive mode.
+
+To software-reset the I3CBlaster from Python call `i3c.reset()`. It closes the serial port and waits (up to `wait_s` seconds, default 5) for the device to re-enumerate; the next command reconnects automatically. `i3c.bootloader()` (alias `i3c.enter_bootloader()`) jumps to the RP2040 USB bootloader for a firmware update; it closes the serial port and does not wait, because the device then appears as the RPI-RP2 USB drive.
 
 The file i3cblaster_demo_runme.py is a python code using the i3cblaster module.
 i3cblaster.py contains the code of the i3cblaster module itself.

@@ -173,6 +173,53 @@ class i3cblaster:
         if resp[0] != self.OKTEXT:
             raise Exception('I3C Blaster exception: ' + resp[0])
 
+    # close the serial port after a command that makes the device drop off USB
+    def _drop_connection(self):
+        if self._ser is not None:
+            try:
+                self._ser.close()
+            except Exception:
+                pass
+            self._ser = None
+
+    # Software reset of the I3CBlaster device (RP2040 reboot).
+    # The device acknowledges with OK(0) and reboots; its USB serial port disconnects
+    # and re-enumerates, so the serial port is closed here and the next command reconnects.
+    # bootloader=True is the same as calling bootloader().
+    # wait_s: for a plain reset, wait up to this many seconds for the device to come back
+    # (0 = do not wait). Returns True if the device is reachable again (or no wait was requested).
+    def reset(self, bootloader=False, wait_s=5):
+        if bootloader:
+            self.bootloader()
+            return True
+        resp = self._parse_response(self._exec('reset'))
+        if resp[0] != self.OKTEXT:
+            raise Exception('I3C Blaster exception: ' + resp[0])
+        self._drop_connection()
+        if not wait_s:
+            return True
+        time.sleep(0.5) # give the device time to drop off USB before looking for it again
+        starttime = time.time()
+        while (time.time() - starttime) < wait_s:
+            if self._findcomport(self._serialnumber) is not None and self._connect():
+                return True
+            time.sleep(0.2)
+        return False
+
+    # Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update.
+    # The device acknowledges with OK(0), then shows up as the RPI-RP2 USB mass storage
+    # drive instead of the I3CBlaster serial port. Copy a .uf2 file onto that drive to update.
+    # The serial port is closed here; this function does not wait for the device.
+    def bootloader(self):
+        resp = self._parse_response(self._exec('bootloader'))
+        if resp[0] != self.OKTEXT:
+            raise Exception('I3C Blaster exception: ' + resp[0])
+        self._drop_connection()
+
+    # alias for bootloader()
+    def enter_bootloader(self):
+        self.bootloader()
+
     # Set the I3C clock frequency in units of kHz.
     # provide e.g. 12500 for 12.5 MHz
     def i3c_clk(self, clockrate_khz):
