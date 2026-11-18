@@ -25,6 +25,7 @@ Everything here was taken from the firmware source (`src/main.c`, `src/i3c_hl.c`
 - I3C HDR-DDR: [i3c_ddr_config](#i3c_ddr_config), [i3c_ddr_write](#i3c_ddr_write), [i3c_ddr_read](#i3c_ddr_read), [i3c_ddr_writeread](#i3c_ddr_writeread)
 - I2C: [i2c_clk](#i2c_clk), [i2c_timeout](#i2c_timeout), [i2c_scan](#i2c_scan), [i2c_write](#i2c_write), [i2c_read](#i2c_read), [i2c_writeread](#i2c_writeread)
 - [Known quirks and unclear points found in the source](#known-quirks-and-unclear-points-found-in-the-source)
+- Firmware update guide: [FIRMWARE_UPDATE.md](FIRMWARE_UPDATE.md)
 
 ---
 
@@ -139,7 +140,7 @@ For SDR **reads**, the target may end the read early using the T-bit. The firmwa
 | [help](#help) | `help [command]` | List commands or show details of one |
 | [info](#info) | `info` | Version and debug information |
 | [reset](#reset) | `reset [bootloader]` | Software reset of the I3CBlaster |
-| [bootloader](#bootloader) | `bootloader` | Reboot into the RP2040 USB bootloader |
+| [bootloader](#bootloader) | `bootloader [no_drive]` | Reboot into the RP2040 USB bootloader (with or without USB drive) |
 | [gpio_write](#gpio_write) | `gpio_write port state` | Drive a GPIO high/low or make it an input |
 | [gpio_read](#gpio_read) | `gpio_read [gpionum]` | Read all GPIOs or one GPIO |
 | [i3c_clk](#i3c_clk) | `i3c_clk freq_khz` | Set the I3C SDR clock |
@@ -248,17 +249,27 @@ Software reset of the I3CBlaster itself (RP2040 reboot through the watchdog). Th
 
 ### bootloader
 
-Reboots into the RP2040 ROM USB bootloader (BOOTSEL mode) for a firmware update, without pressing the BOOTSEL button.
+Reboots into the RP2040 ROM USB bootloader (BOOTSEL mode) for a firmware update, without pressing the BOOTSEL button. For step-by-step update instructions see [FIRMWARE_UPDATE.md](FIRMWARE_UPDATE.md).
 
-**Syntax:** `bootloader` (no parameters)
+**Syntax:** `bootloader [no_drive]`
+
+| Parameter | Type | Range | Default | Required | Meaning |
+|-----------|------|-------|---------|----------|---------|
+| `no_drive` | integer | 0 or 1 | 0 | optional | 0 / omitted = the bootloader shows the **RPI-RP2** USB drive **and** the PICOBOOT interface (like a cold boot with BOOTSEL held). 1 = **PICOBOOT interface only**, no USB drive appears; load the firmware with `picotool load -x <file.uf2>`. |
 
 **Responses**
 
 | Response | Meaning |
 |----------|---------|
-| `OK(0)` | Accepted. About 100 ms later the device calls `reset_usb_boot(0,0)`: the serial port disappears and the board appears as the **RPI-RP2** USB mass storage drive. Copy an `i3cblaster.uf2` onto that drive to flash it. |
+| `OK(0)` | Accepted. About 100 ms later the device calls `reset_usb_boot(0, 0)` (`bootloader`, `bootloader 0`) or `reset_usb_boot(0, 1)` (`bootloader 1`; mask bit 0 disables the USB mass storage interface). The serial port disappears and the RP2040 boot device (USB `2e8a:0003`) appears. |
+| `ERROR: no_drive has to be 0 or 1` (red) | Argument other than 0 or 1. Nothing happens. |
+| `ERROR: Invalid value for 'no_drive' (...)` | Argument isn't a number. |
 
-**Example:** `@bootloader` gives `OK(0)`. Python: `i3c.bootloader()` (alias `enter_bootloader()`).
+**Examples**
+- `@bootloader` gives `OK(0)`; the RPI-RP2 drive appears, so copy `i3cblaster.uf2` onto it.
+- `@bootloader 1` gives `OK(0)`; then run `picotool load -x i3cblaster.uf2`.
+
+Python: `i3c.bootloader()`, `i3c.bootloader(no_drive=True)` (alias `enter_bootloader()`), or the complete `i3c.update_firmware('bin/i3cblaster.uf2')`.
 
 ### gpio_write
 
@@ -871,6 +882,6 @@ These are observations from reading the code, **not** changes. They are listed s
 13. **Python module mismatches** (`python/i3cblaster.py`):
     - `i3c_clk()` sends `i3c_clock` and `i2c_clk()` sends `i2c_clock`; both commands don't exist.
     - `i3c_sdr_ccc_direct_write()` sends `i3c_sdr_ccc_bc_write`.
-    - Responses are decoded with the Windows-only `ansi` codec, so the module fails on Linux/macOS as is.
     - The module reads only **one** line per command, so multi-line responses (payload errors, debug lines) leave extra text in the buffer. It is flushed before the next command.
+    - Fixed in the firmware-update change: responses were decoded with the Windows-only `ansi` codec, and the port was opened by its short name (`ttyACM0` instead of `/dev/ttyACM0`). Both broke the module on Linux.
 14. **`i3c_poll` buffer:** up to 17 bytes can be stored in a 16-byte buffer for long IBI payloads.

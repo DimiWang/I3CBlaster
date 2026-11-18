@@ -829,10 +829,17 @@ static void reply_ok_before_reboot(void)
 	sleep_ms(100);
 }
 
-static void __attribute__((noreturn)) reboot_to_usb_bootloader(void)
+// Values for the disable_interface_mask parameter of reset_usb_boot() (pico/bootrom.h, pico-sdk 2.2.0):
+//   0 = both interfaces (USB mass storage drive + PICOBOOT), as on a cold boot with BOOTSEL pressed
+//   1 = disable the USB mass storage interface -> only PICOBOOT (used by picotool) is exposed
+//   2 = disable the PICOBOOT interface
+#define BOOTROM_IF_MASK_DRIVE_AND_PICOBOOT  (0u)
+#define BOOTROM_IF_MASK_PICOBOOT_ONLY       (1u)
+
+static void __attribute__((noreturn)) reboot_to_usb_bootloader(uint32_t disable_interface_mask)
 {
 	reply_ok_before_reboot();
-	reset_usb_boot(0, 0); // enter the RP2040 USB mass storage (BOOTSEL) bootloader, does not return
+	reset_usb_boot(0, disable_interface_mask); // enter the RP2040 USB (BOOTSEL) bootloader, does not return
 	while (1)
 	{
 		tight_loop_contents();
@@ -851,7 +858,7 @@ UCLI_COMMAND_DEF(reset, "Software reset of the I3CBlaster device. Replies OK(0),
 
 	if (args->bootloader == 1)
 	{
-		reboot_to_usb_bootloader(); // does not return
+		reboot_to_usb_bootloader(BOOTROM_IF_MASK_DRIVE_AND_PICOBOOT); // does not return
 	}
 
 	reply_ok_before_reboot();
@@ -862,9 +869,21 @@ UCLI_COMMAND_DEF(reset, "Software reset of the I3CBlaster device. Replies OK(0),
 	}
 }
 
-UCLI_COMMAND_DEF(bootloader, "Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update. Replies OK(0), then the device re-enumerates as the RPI-RP2 USB drive; copy a .uf2 file onto it")
+UCLI_COMMAND_DEF(bootloader, "Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update. Replies OK(0), then reboots into the bootloader. 'bootloader' / 'bootloader 0': RPI-RP2 USB drive + picotool (PICOBOOT) interface. 'bootloader 1': picotool (PICOBOOT) interface only, no USB drive",
+    UCLI_OPTIONAL_INT_ARG_DEF(no_drive, "Optional: 0 or omitted = USB drive (copy a .uf2 onto it) and PICOBOOT interface (default), 1 = PICOBOOT interface only, no USB drive appears - load with: picotool load -x <file.uf2>")
+)
 {
-	reboot_to_usb_bootloader(); // does not return
+	if ((args->no_drive != UCLI_INT_ARG_DEFAULT) && (args->no_drive != 0) && (args->no_drive != 1))
+	{
+		ucli_error("no_drive has to be 0 or 1");
+		return;
+	}
+
+	if (args->no_drive == 1)
+	{
+		reboot_to_usb_bootloader(BOOTROM_IF_MASK_PICOBOOT_ONLY); // does not return
+	}
+	reboot_to_usb_bootloader(BOOTROM_IF_MASK_DRIVE_AND_PICOBOOT); // does not return
 }
 
 // Activity LED: blinks briefly whenever a character is received over USB CDC and when the
