@@ -1,6 +1,9 @@
 import serial 
 import serial.tools.list_ports 
 import time
+import os
+import shutil
+import subprocess
 
 class i3cblaster:
     
@@ -10,8 +13,14 @@ class i3cblaster:
     
     _ser = None
     _serialnumber = None
+    _port = None # optional fixed serial port (e.g. 'COM5' or '/dev/ttyACM0'), see init()
+
+    # text encoding used on the serial line (the firmware only sends ASCII). 'latin-1' works on all OSes.
+    ENCODING = 'latin-1'
     
     def _findcomport(self, serialnumber=None): 
+        if self._port is not None:
+            return self._port
         foundport = None 
         matchstr = 'USB VID:PID=%04x:%04x' % (self.USB_VID, self.USB_PID) 
         ports = serial.tools.list_ports.comports() 
@@ -19,13 +28,15 @@ class i3cblaster:
             if port.usb_info().find(matchstr.upper()) >= 0: 
                 if foundport is None: 
                     if serialnumber is None:
-                        foundport = port.name
+                        foundport = port.device # full device path, e.g. COM5 or /dev/ttyACM0
                     elif serialnumber == port.serial_number:
-                        foundport = port.name
+                        foundport = port.device
         return foundport 
         
-    def init(self, serialnumber=None): 
+    # optionally select a device by USB serial number and/or a fixed serial port name
+    def init(self, serialnumber=None, port=None): 
         self._serialnumber = serialnumber
+        self._port = port
     
     # Magic function to close all relevant serial port instances running open in current python instance right now
     def close_serialport(self, port): 
@@ -88,14 +99,14 @@ class i3cblaster:
         respstr = ''
         if self._connect():
             self._ser.read_all() # flush
-            self._ser.write(('@'+cmdstr+'\r').encode('ansi'))
+            self._ser.write(('@'+cmdstr+'\r').encode(self.ENCODING))
             respstr = self._ser.readline()
         return respstr
     
     def _parse_response(self, resp):
         errorcode = ''
         returnvalues = []
-        resp = resp.decode('ansi').strip()
+        resp = resp.decode(self.ENCODING).strip()
         errorend = resp.find(')')
         if errorend >= 0:            
             errorcode = resp[0:errorend+1]
@@ -207,18 +218,80 @@ class i3cblaster:
         return False
 
     # Jump to the RP2040 USB bootloader (BOOTSEL mode) for a firmware update.
-    # The device acknowledges with OK(0), then shows up as the RPI-RP2 USB mass storage
-    # drive instead of the I3CBlaster serial port. Copy a .uf2 file onto that drive to update.
+    # no_drive=False: the device shows up as the RPI-RP2 USB drive (copy a .uf2 file onto it)
+    #                 and also offers the PICOBOOT interface used by picotool.
+    # no_drive=True:  only the PICOBOOT interface is offered (no USB drive pops up);
+    #                 load the firmware with picotool, e.g. 'picotool load -x file.uf2' (see update_firmware()).
     # The serial port is closed here; this function does not wait for the device.
-    def bootloader(self):
-        resp = self._parse_response(self._exec('bootloader'))
+    def bootloader(self, no_drive=False):
+        if not self._connect():
+            raise Exception('I3C Blaster exception: no I3CBlaster serial port found')
+        resp = self._parse_response(self._exec('bootloader 1' if no_drive else 'bootloader'))
         if resp[0] != self.OKTEXT:
             raise Exception('I3C Blaster exception: ' + resp[0])
         self._drop_connection()
 
     # alias for bootloader()
-    def enter_bootloader(self):
-        self.bootloader()
+    def enter_bootloader(self, no_drive=False):
+        self.bootloader(no_drive)
+
+    # Update the I3CBlaster firmware with picotool, without the USB drive appearing.
+    #   uf2_path : path of the firmware file, e.g. 'bin/i3cblaster.uf2'
+    #   picotool : picotool executable name or full path
+    #   timeout  : seconds to wait for the bootloader and for the device to come back
+    #   verify   : pass -v to picotool load (read back and compare)
+    # Steps: 'bootloader 1' -> wait for the PICOBOOT device -> 'picotool load [-v] -x <uf2>'
+    #        -> wait for the I3CBlaster serial port to come back.
+    # If no I3CBlaster serial port is found but a board is already in BOOTSEL mode, it is loaded directly.
+    # Returns the picotool output. Raises an Exception with a clear message on failure.
+    def update_firmware(self, uf2_path, picotool='picotool', timeout=20, verify=True):
+        if not os.path.isfile(uf2_path):
+            raise Exception('firmware file not found: %s' % uf2_path)
+        picotool_exe = shutil.which(picotool) or (picotool if os.path.isfile(picotool) else None)
+        if picotool_exe is None:
+            raise Exception("picotool not found ('%s'). Install it (see docs/FIRMWARE_UPDATE.md) "
+                            "or pass its full path with picotool=..." % picotool)
+
+        def picoboot_present():
+            r = subprocess.run([picotool_exe, 'info'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            return r.returncode == 0, r.stdout
+
+        # 1) send the I3CBlaster into the bootloader (PICOBOOT only)
+        if self._connect():
+            self.bootloader(no_drive=True)
+        else:
+            present, _ = picoboot_present()
+            if not present:
+                raise Exception('no I3CBlaster serial port and no RP2040 in BOOTSEL mode found')
+
+        # 2) wait for the PICOBOOT interface
+        starttime = time.time()
+        last_out = ''
+        while True:
+            present, last_out = picoboot_present()
+            if present:
+                break
+            if time.time() - starttime > timeout:
+                raise Exception('RP2040 bootloader (PICOBOOT, USB 2e8a:0003) not found within %ds. picotool says: %s\n'
+                                'Linux: install the udev rule (or run with sudo). Windows: install the WinUSB driver '
+                                'for "RP2 Boot" with Zadig. See docs/FIRMWARE_UPDATE.md' % (timeout, last_out.strip()))
+            time.sleep(0.5)
+
+        # 3) load the firmware and start it
+        cmd = [picotool_exe, 'load'] + (['-v'] if verify else []) + ['-x', uf2_path]
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if r.returncode != 0:
+            raise Exception('picotool load failed (exit code %d):\n%s' % (r.returncode, r.stdout))
+
+        # 4) wait for the I3CBlaster serial port to come back
+        self._drop_connection()
+        starttime = time.time()
+        while time.time() - starttime < timeout:
+            if self._findcomport(self._serialnumber) is not None and self._connect():
+                return r.stdout
+            time.sleep(0.5)
+        raise Exception('firmware loaded, but the I3CBlaster serial port did not come back within %ds.\n%s'
+                        % (timeout, r.stdout))
 
     # Set the I3C clock frequency in units of kHz.
     # provide e.g. 12500 for 12.5 MHz

@@ -161,6 +161,8 @@ Enter the bin folder and download the I3CBlaster.uf2 file
 * Download the I3CBlaster.uf2 file from this page: <a href="https://github.com/xyphro/I3CBlaster/bin">https://github.com/xyphro/I3CBlaster/bin</a>
 * A flash drive should have appeard on your PC. Drag and drop the previously downloaded I3CBlaster.uf2 file on this drive. This will start the programming. Once done, the FLASH drive removed automatically and the firmware is READY TO USE. Congrats! :-)
 
+**Updating an already installed I3CBlaster** doesn't need the BOOTSEL button. Send `bootloader` (USB drive appears, copy the .uf2 onto it), or update with **picotool** without any USB drive: `bootloader 1`, then `picotool load -x i3cblaster.uf2`. You can also run the Python helper `python/update_firmware.py bin/i3cblaster.uf2`. Step-by-step instructions for Linux, Raspberry Pi and Windows are in [docs/FIRMWARE_UPDATE.md](docs/FIRMWARE_UPDATE.md).
+
 ## Step 4: Hardware side work
 Connect 2 pullup resistors from the +3.3V pin of the board to GPIO16 and GPIO17.
   
@@ -207,7 +209,7 @@ Example Putty settings:
 | [help](docs/COMMANDS.md#help) | `help [command]` | List commands or show details of one |
 | [info](docs/COMMANDS.md#info) | `info` | Version and debug information |
 | [reset](docs/COMMANDS.md#reset) | `reset [bootloader]` | Software reset of the I3CBlaster |
-| [bootloader](docs/COMMANDS.md#bootloader) | `bootloader` | Reboot into the RP2040 USB bootloader |
+| [bootloader](docs/COMMANDS.md#bootloader) | `bootloader [no_drive]` | Reboot into the RP2040 USB bootloader (with or without USB drive) |
 | [gpio_write](docs/COMMANDS.md#gpio_write) | `gpio_write port state` | Drive a GPIO high/low or make it an input |
 | [gpio_read](docs/COMMANDS.md#gpio_read) | `gpio_read [gpionum]` | Read all GPIOs or one GPIO |
 | [i3c_clk](docs/COMMANDS.md#i3c_clk) | `i3c_clk freq_khz` | Set the I3C SDR clock |
@@ -310,7 +312,7 @@ Disclaimer: I did only test this under Windows, but it should work flawless unde
 
 The python module but also an example code is located in the python subdirectory. It should be pretty self explaining and exposes the same commands as the interactive mode.
 
-To software-reset the I3CBlaster from Python call `i3c.reset()`. It closes the serial port and waits (up to `wait_s` seconds, default 5) for the device to re-enumerate; the next command reconnects automatically. `i3c.bootloader()` (alias `i3c.enter_bootloader()`) jumps to the RP2040 USB bootloader for a firmware update; it closes the serial port and does not wait, because the device then appears as the RPI-RP2 USB drive.
+To software-reset the I3CBlaster from Python call `i3c.reset()`. It closes the serial port and waits (up to `wait_s` seconds, default 5) for the device to re-enumerate; the next command reconnects automatically. `i3c.bootloader()` (alias `i3c.enter_bootloader()`) jumps to the RP2040 USB bootloader; `i3c.bootloader(no_drive=True)` does the same without the USB drive (picotool only). `i3c.update_firmware('bin/i3cblaster.uf2')` does a complete firmware update with picotool (see [docs/FIRMWARE_UPDATE.md](docs/FIRMWARE_UPDATE.md)). To select a device use `i3c.init(serialnumber=..., port=...)`, e.g. `port='COM5'` or `port='/dev/ttyACM0'`.
 
 The file i3cblaster_demo_runme.py is a python code using the i3cblaster module.
 i3cblaster.py contains the code of the i3cblaster module itself.
